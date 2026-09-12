@@ -32,7 +32,8 @@ pass: admin@123
 # Prometheus  http://95.38.235.108:9090
 no auth
 
-Challenges
+Challenges : 
+---------------
 Started in my own Ansible tree with a generic role layout, then had to move everything into the scenario-2 template: the entrypoint must be main.yml in the repo root and the host must live in inventory/inventory/monitoring.yml, since that is exactly what the grading command reads.
 ansible_architecture triggers a deprecation warning. Using ansible_facts['architecture'] is the current form.
 Instead of editing grafana.ini, the port and the admin credentials are set with GF_* environment variables in a systemd drop-in. The file shipped by the package stays untouched.
