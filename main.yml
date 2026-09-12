@@ -1,0 +1,35 @@
+---
+#- name: Check SSH connection
+#  hosts: all
+#  gather_facts: false
+#  tasks:
+#    - name: Test SSH connection
+#      ansible.builtin.ping:
+#      run_once: true
+#      tags:
+#        - always
+#
+#- name: Deploy monitoring stack
+#  hosts: monitoring
+#  become: true
+#  roles:
+#    - { role: monitoring, tags: prometheus }
+    ### OR
+    # - { role: prometheus, tags: prometheus }
+    # - { role: grafana, tags: grafana }
+    #
+    #
+    #
+- name: Monitoring stack
+  hosts: monitoring
+  become: true
+  gather_facts: true
+  vars:
+    arch_map:
+      x86_64: amd64
+      aarch64: arm64
+  roles:
+    - common
+    - node_exporter
+    - prometheus
+    - grafana

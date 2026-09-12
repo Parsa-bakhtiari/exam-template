@@ -1,0 +1,6 @@
+---
+monitoring:
+  hosts:
+    mon-1:
+      ansible_host: 95.38.235.108
+      ansible_user: root
