@@ -1,90 +1,38 @@
-# DevOps Exam
+Playbook & Roles
+main.yml runs four roles against the monitoring group with become: true.
 
-This exam has 2 parts. 
+common: apt cache + base packages
+node_exporter: binary from upstream tarball, systemd unit, port 9100
+prometheus: binaries + prometheus.yml (validated with promtool), systemd unit, port 9090, scrapes itself and node_exporter
+grafana: apt repo + package, datasource and dashboard via provisioning, port and admin credentials via a systemd drop-in
 
-+ Keep answers short.
-+ English is better. Persian is OK.
-+ You can use AI. Read your text once before you push.
+Handlers restart a service only when its binary, unit or config changes, so the playbook is idempotent: a second run reports changed=0.
 
-## Start
-
-1. Open [https://auth.fanap.kubelog.ir](https://auth.fanap.kubelog.ir)
-2. Enter the last 4 digits of your phone number.
-3. Run the setup commands on that page.
-4. First SSH = Scenario 1. Second SSH = Scenario 2.
-
-## Submit
-
-1. Fork [https://github.com/fanapcampus/exam-template](https://github.com/fanapcampus/exam-template)
-2. Keep the name `exam-template`. Make it public.
-3. Send your public fork URL in [this form](https://docs.google.com/forms/d/e/1FAIpQLSd2tC9HDaLtJpzJGOU3seGmcdvb_liu8d9cHVXwOxGM8aeOvg/viewform) before **19:00**.
-4. Work only on these branches:
-  - [`doc-1`](https://github.com/fanapcampus/exam-template/tree/doc-1) — Scenario 1 write-up (`README.md`)
-  - [`scenario-2`](https://github.com/fanapcampus/exam-template/tree/scenario-2) — Ansible code
-  - [`doc-2`](https://github.com/fanapcampus/exam-template/tree/doc-2) — Scenario 2 write-up (`README.md`)
-5. Do not commit after **19:00**.
+Grafana is fully provisioned from disk, nothing is done in the UI: /etc/grafana/provisioning/datasources/prometheus.yml for the datasource, and /var/lib/grafana/dashboards/node-cpu-memory.json for the dashboard.
 
 
+Inventory
 
-## Scenario 1
+Structure unchanged. Target in inventory/inventory/monitoring.yml:
 
-Someone tried to run [service-catalog](https://github.com/fanapcampus/service-catalog) on the first VM and could not.
-Files are in `/opt/service-catalog`. Read the files. Use this picture.
+yaml
+monitoring:
+  hosts:
+    mon-1:
+      ansible_host: 95.38.235.108
+      ansible_user: root
 
-```mermaid
-flowchart LR
-  User(["User"]) -->|"graph / nodes / edges / impact"| LB["load balancer (nginx)"]
-  LB --> API["backend"]
-  API --> DB[("PostgreSQL")]
-```
+Ports are in inventory/group_vars/monitoring.yml. Versions, paths and credentials are in each role's defaults/main.yml.
 
+Credentials / Login
+# Grafana  http://95.38.235.108:3000
+user: admin
+pass: admin@123
 
+# Prometheus  http://95.38.235.108:9090
+no auth
 
-When it works:
-
-```bash
-curl http://localhost/graph
-```
-
-You need HTTP 200 and the proper output.
-
-Write what you did on branch [`doc-1`](https://github.com/fanapcampus/exam-template/tree/doc-1).
-
-## Scenario 2
-
-On the second VM (or Vagrant), use Ansible to install:
-
-- Prometheus on 9090
-- Grafana on 3000
-- node_exporter
-- Grafana datasource = Prometheus
-- one dashboard with CPU and memory
-
-Start from branch [`scenario-2`](https://github.com/fanapcampus/exam-template/tree/scenario-2). Do not change the `inventory/` folder.
-Put the user and IP in inventory.
-
-I will run:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-ansible-playbook -i inventory main.yml -b --private-key ~/.ssh/id_ed25519_fanap
-```
-
-The code must run.
-
-Write the doc on branch [`doc-2`](https://github.com/fanapcampus/exam-template/tree/doc-2). Put Grafana user and password there.
-
-## Score
-
-Scenario 1(Find and fix matters most): 
-    + find 30% 
-    + fix 40% 
-    + write-up doc 30%. 
-    
-
-Scenario 2: 
-    + working code 50% 
-    + write-up 50%.
-If the code does not run, I only look at the doc quickly.
+Challenges
+Started in my own Ansible tree with a generic role layout, then had to move everything into the scenario-2 template: the entrypoint must be main.yml in the repo root and the host must live in inventory/inventory/monitoring.yml, since that is exactly what the grading command reads.
+ansible_architecture triggers a deprecation warning. Using ansible_facts['architecture'] is the current form.
+Instead of editing grafana.ini, the port and the admin credentials are set with GF_* environment variables in a systemd drop-in. The file shipped by the package stays untouched.
