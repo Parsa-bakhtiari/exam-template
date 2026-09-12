@@ -1,4 +1,4 @@
-1. DNS :
+1.DNS:
 -----------
 First Problem is that Docker Compose is not exist in VM . 
 so I have to install docker-compose or docker-compose-v2 . but because of DNS problem I can't even "apt update" . 
