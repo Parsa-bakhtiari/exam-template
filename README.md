@@ -1,90 +1,78 @@
-# DevOps Exam
-
-This exam has 2 parts. 
-
-+ Keep answers short.
-+ English is better. Persian is OK.
-+ You can use AI. Read your text once before you push.
-
-## Start
-
-1. Open [https://auth.fanap.kubelog.ir](https://auth.fanap.kubelog.ir)
-2. Enter the last 4 digits of your phone number.
-3. Run the setup commands on that page.
-4. First SSH = Scenario 1. Second SSH = Scenario 2.
-
-## Submit
-
-1. Fork [https://github.com/fanapcampus/exam-template](https://github.com/fanapcampus/exam-template)
-2. Keep the name `exam-template`. Make it public.
-3. Send your public fork URL in [this form](https://docs.google.com/forms/d/e/1FAIpQLSd2tC9HDaLtJpzJGOU3seGmcdvb_liu8d9cHVXwOxGM8aeOvg/viewform) before **19:00**.
-4. Work only on these branches:
-  - [`doc-1`](https://github.com/fanapcampus/exam-template/tree/doc-1) — Scenario 1 write-up (`README.md`)
-  - [`scenario-2`](https://github.com/fanapcampus/exam-template/tree/scenario-2) — Ansible code
-  - [`doc-2`](https://github.com/fanapcampus/exam-template/tree/doc-2) — Scenario 2 write-up (`README.md`)
-5. Do not commit after **19:00**.
+1. DNS :
+-----------
+First Problem is that Docker Compose is not exist in VM . 
+so I have to install docker-compose or docker-compose-v2 . but because of DNS problem I can't even "apt update" . 
+so I disable systemd-resolvd service and remove default fire resolv.conf and create new file with below Item : 
+nameserver 8.8.8.8
+nameserver 1.1.1.1
 
 
-
-## Scenario 1
-
-Someone tried to run [service-catalog](https://github.com/fanapcampus/service-catalog) on the first VM and could not.
-Files are in `/opt/service-catalog`. Read the files. Use this picture.
-
-```mermaid
-flowchart LR
-  User(["User"]) -->|"graph / nodes / edges / impact"| LB["load balancer (nginx)"]
-  LB --> API["backend"]
-  API --> DB[("PostgreSQL")]
-```
+after installing docker-compose , the problem is : 
+root@parsa-bakhtiari-scenario1:/opt/service-catalog# curl localhost/graph
+<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>nginx/1.27.5</center>
+</body>
+</html>
 
 
+2.Backend returned HTTP 500
+--------------------------------
+Symptom. Every endpoint returned 500, even called from inside the backend container. Gunicorn itself was running fine.
 
-When it works:
+Cause. backend was attached only to nginx-backend-net, and db only to backend-db-net. Docker's DNS resolves service names only within shared networks, so db was unresolvable and the database connection always failed.
 
-```bash
-curl http://localhost/graph
-```
+bash
+getent hosts db    # no output
 
-You need HTTP 200 and the proper output.
+Fix. Attach backend to both networks:
 
-Write what you did on branch [`doc-1`](https://github.com/fanapcampus/exam-template/tree/doc-1).
+yaml
+  backend:
+    networks:
+      - nginx-backend-net
+      - backend-db-net
 
-## Scenario 2
+Verified. curl http://127.0.0.1:5000/graph inside the container returned the seeded graph.
 
-On the second VM (or Vagrant), use Ansible to install:
 
-- Prometheus on 9090
-- Grafana on 3000
-- node_exporter
-- Grafana datasource = Prometheus
-- one dashboard with CPU and memory
 
-Start from branch [`scenario-2`](https://github.com/fanapcampus/exam-template/tree/scenario-2). Do not change the `inventory/` folder.
-Put the user and IP in inventory.
+3. HTTP 502 from the host
+-------------------------------
+Symptom. curl http://backend:5000/graph worked inside the nginx container, but curl http://localhost/graph from the host returned 502.
 
-I will run:
+Cause. The upstream in nginx.conf was set to backend-api, which does not exist. The Compose service is named backend, and Docker's DNS only registers the real service name. The error log confirmed it:
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-ansible-playbook -i inventory main.yml -b --private-key ~/.ssh/id_ed25519_fanap
-```
+backend-api could not be resolved (3: Host not found)
 
-The code must run.
+The curl inside the container worked because it was pointed at the correct name by hand, not at what nginx was actually configured to use.
 
-Write the doc on branch [`doc-2`](https://github.com/fanapcampus/exam-template/tree/doc-2). Put Grafana user and password there.
+Fix. Point the upstream at the real service name:
 
-## Score
+nginx
+        location / {
+            resolver 127.0.0.11 valid=10s ipv6=off;
+            set $backend_upstream http://backend:5000;
+            proxy_pass $backend_upstream$request_uri;
+            proxy_set_header Host $host;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
 
-Scenario 1(Find and fix matters most): 
-    + find 30% 
-    + fix 40% 
-    + write-up doc 30%. 
-    
+Applied without downtime. nginx.conf is bind-mounted, so it was edited on the host and reloaded in place:
 
-Scenario 2: 
-    + working code 50% 
-    + write-up 50%.
-If the code does not run, I only look at the doc quickly.
+bash
+docker exec service-catalog_nginx_1 nginx -T | grep -e resolver -e proxy_pass
+docker exec service-catalog_nginx_1 nginx -t
+docker exec service-catalog_nginx_1 nginx -s reload
+
+Verified. curl http://localhost/graph and /nodes both returned 200 with the expected JSON.
+
+
+
+4. Summary of changes
+-------------------------------
+docker-compose.yml	---> Added backend-db-net to the backend service
+nginx/nginx.conf	--> Upstream changed from backend-api to backend
